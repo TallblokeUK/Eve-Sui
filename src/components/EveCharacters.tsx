@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { truncateAddress } from "@/lib/utils";
+import CharacterProfile from "./CharacterProfile";
 
 interface Character {
   objectId: string;
@@ -12,20 +13,6 @@ interface Character {
   address: string;
 }
 
-interface CharacterDetail {
-  objectId: string;
-  version: string;
-  name: string;
-  description: string;
-  url: string;
-  itemId: string;
-  tenant: string;
-  tribeId: number;
-  address: string;
-  ownerCapId: string;
-  ownedObjects: { objectId: string; type: string; fullType: string }[];
-}
-
 export default function EveCharacters() {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [total, setTotal] = useState(0);
@@ -33,9 +20,7 @@ export default function EveCharacters() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<CharacterDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [profileId, setProfileId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -67,36 +52,24 @@ export default function EveCharacters() {
     setSearch(value);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      setExpandedId(null);
-      setDetail(null);
+      setProfileId(null);
       fetchPage(1, value);
     }, 300);
-  }
-
-  async function toggleDetail(objectId: string) {
-    if (expandedId === objectId) {
-      setExpandedId(null);
-      setDetail(null);
-      return;
-    }
-    setExpandedId(objectId);
-    setDetail(null);
-    setDetailLoading(true);
-    try {
-      const res = await fetch(`/api/eve?action=character-detail&id=${objectId}`);
-      if (!res.ok) throw new Error("Failed to load details");
-      setDetail(await res.json());
-    } catch {
-      setDetail(null);
-    } finally {
-      setDetailLoading(false);
-    }
   }
 
   if (error) {
     return (
       <div className="card-static border-kill/20 bg-kill-dim p-4">
         <p className="text-sm text-kill">{error}</p>
+      </div>
+    );
+  }
+
+  // Show full profile view
+  if (profileId) {
+    return (
+      <div className="space-y-4">
+        <CharacterProfile characterId={profileId} onClose={() => setProfileId(null)} />
       </div>
     );
   }
@@ -133,85 +106,30 @@ export default function EveCharacters() {
       ) : (
         <div className="card-static divide-y divide-border overflow-hidden">
           {characters.map((char) => (
-            <div key={char.objectId}>
-              <button
-                onClick={() => toggleDetail(char.objectId)}
-                className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-surface-hover"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded bg-accent-dim text-xs font-bold text-accent">
-                    {char.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white">{char.name}</p>
-                    <p className="font-mono text-[0.65rem] text-foreground/25">
-                      {truncateAddress(char.objectId)}
-                    </p>
-                  </div>
+            <button
+              key={char.objectId}
+              onClick={() => setProfileId(char.objectId)}
+              className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-surface-hover"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded bg-accent-dim text-xs font-bold text-accent">
+                  {char.name.charAt(0).toUpperCase()}
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <p className="text-xs text-foreground/40">Tribe {char.tribeId}</p>
-                    <p className="font-mono text-[0.65rem] text-foreground/20">#{char.itemId}</p>
-                  </div>
-                  <span className="text-foreground/20 transition-transform"
-                    style={{ transform: expandedId === char.objectId ? "rotate(45deg)" : "none" }}>
-                    +
-                  </span>
+                <div>
+                  <p className="text-sm font-semibold text-white">{char.name}</p>
+                  <p className="font-mono text-[0.65rem] text-foreground/25">
+                    {truncateAddress(char.objectId)}
+                  </p>
                 </div>
-              </button>
-
-              {/* Expanded detail */}
-              {expandedId === char.objectId && (
-                <div className="border-t border-border bg-surface px-4 py-4 pl-15">
-                  {detailLoading ? (
-                    <p className="text-sm text-foreground/30">Loading details...</p>
-                  ) : detail ? (
-                    <div className="space-y-3">
-                      {detail.description && (
-                        <p className="text-sm text-foreground/60">{detail.description}</p>
-                      )}
-                      <div className="grid grid-cols-2 gap-x-8 gap-y-2.5">
-                        {[
-                          ["Object ID", detail.objectId, true],
-                          ["Wallet", detail.address, true],
-                          ["Item ID", detail.itemId, false],
-                          ["Tenant", detail.tenant, false],
-                          ["Tribe", String(detail.tribeId), false],
-                          ["Version", detail.version, false],
-                        ].map(([label, value, mono]) => (
-                          <div key={label as string}>
-                            <p className="text-[0.6rem] font-semibold uppercase tracking-wider text-foreground/20">{label as string}</p>
-                            <p className={`mt-0.5 text-xs break-all ${mono ? "font-mono" : ""} text-foreground/50`}>
-                              {value as string}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                      {detail.ownedObjects.length > 0 && (
-                        <div className="pt-1">
-                          <p className="text-[0.6rem] font-semibold uppercase tracking-wider text-foreground/20 mb-1.5">
-                            Owned Objects
-                          </p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {detail.ownedObjects.map((o) => (
-                              <span
-                                key={o.objectId}
-                                className="rounded bg-white/5 px-2 py-1 font-mono text-[0.65rem] text-foreground/40"
-                              >
-                                {o.type}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-foreground/30">Failed to load details</p>
-                  )}
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <p className="text-xs text-foreground/40">Tribe {char.tribeId}</p>
+                  <p className="font-mono text-[0.65rem] text-foreground/20">#{char.itemId}</p>
                 </div>
-              )}
-            </div>
+                <span className="text-foreground/15 text-xs">View</span>
+              </div>
+            </button>
           ))}
         </div>
       )}

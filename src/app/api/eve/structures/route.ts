@@ -15,7 +15,6 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
-// Known type IDs from the EVE Frontier game
 const TYPE_LABELS: Record<string, string> = {
   "87119": "Smart Storage Unit I",
   "87120": "Smart Storage Unit II",
@@ -35,130 +34,115 @@ const TYPE_LABELS: Record<string, string> = {
   "92401": "Turret Module II",
 };
 
+async function collectAllEventIds(eventType: string, idField: string) {
+  const ids: string[] = [];
+  const capIds: string[] = [];
+  let cursor = null;
+  let hasNext = true;
+  while (hasNext) {
+    const r = await client.queryEvents({
+      query: { MoveEventType: eventType },
+      limit: 50,
+      order: "descending",
+      ...(cursor ? { cursor } : {}),
+    });
+    for (const e of r.data) {
+      const p = e.parsedJson as Record<string, string>;
+      if (p[idField]) ids.push(p[idField]);
+      if (p.owner_cap_id) capIds.push(p.owner_cap_id);
+    }
+    cursor = r.nextCursor;
+    hasNext = r.hasNextPage;
+  }
+  return { ids, capIds };
+}
+
+async function countAllEvents(eventType: string): Promise<number> {
+  let count = 0;
+  let cursor = null;
+  let hasNext = true;
+  while (hasNext) {
+    const r = await client.queryEvents({
+      query: { MoveEventType: eventType },
+      limit: 50,
+      order: "descending",
+      ...(cursor ? { cursor } : {}),
+    });
+    count += r.data.length;
+    cursor = r.nextCursor;
+    hasNext = r.hasNextPage;
+  }
+  return count;
+}
+
 export async function GET() {
   try {
-    // Gather assembly data
-    const assemblyIds: string[] = [];
-    const assemblyCapIds: string[] = [];
-    let cursor = null;
-    let hasNext = true;
-    while (hasNext) {
-      const r = await client.queryEvents({
-        query: { MoveEventType: EVE_EVENTS.AssemblyCreated },
-        limit: 50,
-        order: "descending",
-        ...(cursor ? { cursor } : {}),
-      });
-      for (const e of r.data) {
-        const p = e.parsedJson as Record<string, string>;
-        if (p.assembly_id) assemblyIds.push(p.assembly_id);
-        if (p.owner_cap_id) assemblyCapIds.push(p.owner_cap_id);
-      }
-      cursor = r.nextCursor;
-      hasNext = r.hasNextPage;
-    }
+    // Fetch all event IDs and storage count in parallel
+    const [storageTotal, assemblyData, turretData] = await Promise.all([
+      countAllEvents(EVE_EVENTS.StorageUnitCreated),
+      collectAllEventIds(EVE_EVENTS.AssemblyCreated, "assembly_id"),
+      collectAllEventIds(EVE_EVENTS.TurretCreated, "turret_id"),
+    ]);
 
-    // Gather turret data
-    const turretIds: string[] = [];
-    const turretCapIds: string[] = [];
-    cursor = null;
-    hasNext = true;
-    while (hasNext) {
-      const r = await client.queryEvents({
-        query: { MoveEventType: EVE_EVENTS.TurretCreated },
-        limit: 50,
-        order: "descending",
-        ...(cursor ? { cursor } : {}),
-      });
-      for (const e of r.data) {
-        const p = e.parsedJson as Record<string, string>;
-        if (p.turret_id) turretIds.push(p.turret_id);
-        if (p.owner_cap_id) turretCapIds.push(p.owner_cap_id);
-      }
-      cursor = r.nextCursor;
-      hasNext = r.hasNextPage;
-    }
-
-    // Fetch objects in batches
-    let assemblyOnline = 0;
-    let assemblyOffline = 0;
-    let turretOnline = 0;
-    let turretOffline = 0;
+    let assemblyOnline = 0, assemblyOffline = 0;
+    let turretOnline = 0, turretOffline = 0;
     const typeCounts: Record<string, number> = {};
     const ownerCounts: Record<string, number> = {};
 
-    // Assemblies
-    for (let i = 0; i < assemblyIds.length; i += 50) {
-      const idBatch = assemblyIds.slice(i, i + 50);
-      const capBatch = assemblyCapIds.slice(i, i + 50);
+    // Fetch assembly objects + caps in batches
+    for (let i = 0; i < assemblyData.ids.length; i += 50) {
+      const idBatch = assemblyData.ids.slice(i, i + 50);
+      const capBatch = assemblyData.capIds.slice(i, i + 50);
       const [objs, caps] = await Promise.all([
         client.multiGetObjects({ ids: idBatch, options: { showContent: true } }),
-        client.multiGetObjects({ ids: capBatch, options: { showOwner: true } }),
+        capBatch.length > 0
+          ? client.multiGetObjects({ ids: capBatch, options: { showOwner: true } })
+          : Promise.resolve([]),
       ]);
 
       for (let j = 0; j < objs.length; j++) {
         const fields = (objs[j].data?.content as Record<string, unknown>)?.fields as Record<string, unknown> | undefined;
         if (!fields) continue;
-
         const status = (fields.status as Record<string, Record<string, Record<string, string>>>)?.fields?.status?.variant;
         if (status === "ONLINE") assemblyOnline++;
         else assemblyOffline++;
-
         const tid = fields.type_id as string;
         typeCounts[tid] = (typeCounts[tid] || 0) + 1;
-
         const owner = (caps[j]?.data?.owner as Record<string, string>)?.AddressOwner;
         if (owner) ownerCounts[owner] = (ownerCounts[owner] || 0) + 1;
       }
     }
 
-    // Turrets
-    for (let i = 0; i < turretIds.length; i += 50) {
-      const idBatch = turretIds.slice(i, i + 50);
-      const [objs] = await Promise.all([
-        client.multiGetObjects({ ids: idBatch, options: { showContent: true } }),
-      ]);
-
+    // Fetch turret objects in batches
+    for (let i = 0; i < turretData.ids.length; i += 50) {
+      const idBatch = turretData.ids.slice(i, i + 50);
+      const objs = await client.multiGetObjects({ ids: idBatch, options: { showContent: true } });
       for (const o of objs) {
         const fields = (o.data?.content as Record<string, unknown>)?.fields as Record<string, unknown> | undefined;
         if (!fields) continue;
-
         const status = (fields.status as Record<string, Record<string, Record<string, string>>>)?.fields?.status?.variant;
         if (status === "ONLINE") turretOnline++;
         else turretOffline++;
-
         const tid = fields.type_id as string;
         typeCounts[tid] = (typeCounts[tid] || 0) + 1;
       }
     }
 
-    // Resolve top deployer names
+    // Resolve deployer names
     const charIndex = await getCharacterIndex().catch(() => []);
     const addrToName = new Map(charIndex.map((c) => [c.address, c.name]));
 
-    const topDeployers = Object.entries(ownerCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([addr, count]) => ({
-        address: addr,
-        name: addrToName.get(addr) ?? null,
-        count,
-      }));
-
-    const typeBreakdown = Object.entries(typeCounts)
-      .sort((a, b) => b[1] - a[1])
-      .map(([id, count]) => ({
-        typeId: id,
-        label: TYPE_LABELS[id] ?? `Type ${id}`,
-        count,
-      }));
-
     return jsonResponse({
-      assemblies: { total: assemblyIds.length, online: assemblyOnline, offline: assemblyOffline },
-      turrets: { total: turretIds.length, online: turretOnline, offline: turretOffline },
-      storageUnits: 0, // Event-based count only
-      typeBreakdown,
-      topDeployers,
+      assemblies: { total: assemblyData.ids.length, online: assemblyOnline, offline: assemblyOffline },
+      turrets: { total: turretData.ids.length, online: turretOnline, offline: turretOffline },
+      storageUnits: storageTotal,
+      typeBreakdown: Object.entries(typeCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([id, count]) => ({ typeId: id, label: TYPE_LABELS[id] ?? `Type ${id}`, count })),
+      topDeployers: Object.entries(ownerCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([addr, count]) => ({ address: addr, name: addrToName.get(addr) ?? null, count })),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
