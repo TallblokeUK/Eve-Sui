@@ -17,6 +17,7 @@ interface Cache<T> {
 
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 let characterCache: Cache<CharacterIndex[]> | null = null;
+let buildingPromise: Promise<CharacterIndex[]> | null = null;
 
 /** Build a full character index by paginating events + fetching objects */
 export async function getCharacterIndex(): Promise<CharacterIndex[]> {
@@ -24,6 +25,18 @@ export async function getCharacterIndex(): Promise<CharacterIndex[]> {
     return characterCache.data;
   }
 
+  // Deduplicate concurrent builds
+  if (buildingPromise) return buildingPromise;
+
+  buildingPromise = buildIndex();
+  try {
+    return await buildingPromise;
+  } finally {
+    buildingPromise = null;
+  }
+}
+
+async function buildIndex(): Promise<CharacterIndex[]> {
   // Collect all character IDs from events
   const ids: string[] = [];
   let cursor: { txDigest: string; eventSeq: string } | null = null;
@@ -71,9 +84,16 @@ export async function getCharacterIndex(): Promise<CharacterIndex[]> {
   return characters;
 }
 
-/** Resolve an in-game item_id to a character name */
+/** Resolve an in-game item_id to a character name (non-blocking if cache not ready) */
 export async function resolveCharacterName(itemId: string): Promise<string | null> {
-  const index = await getCharacterIndex();
-  const char = index.find((c) => c.itemId === itemId);
-  return char?.name ?? null;
+  // If cache exists, use it instantly
+  if (characterCache && Date.now() - characterCache.timestamp < CACHE_TTL) {
+    return characterCache.data.find((c) => c.itemId === itemId)?.name ?? null;
+  }
+  // Otherwise, don't block — return null and let the UI show the ID
+  // Kick off a background build if not already running
+  if (!buildingPromise) {
+    buildingPromise = buildIndex().finally(() => { buildingPromise = null; });
+  }
+  return null;
 }

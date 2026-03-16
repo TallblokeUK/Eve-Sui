@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import client from "@/lib/sui-client";
 
+export const maxDuration = 30;
+
 function jsonResponse(data: unknown, status = 200) {
   const body = JSON.stringify(data, (_key, value) =>
     typeof value === "bigint" ? value.toString() : value

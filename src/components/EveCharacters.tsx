@@ -95,114 +95,119 @@ export default function EveCharacters() {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4">
-        <p className="text-sm text-red-400">{error}</p>
+      <div className="card-static border-kill/20 bg-kill-dim p-4">
+        <p className="text-sm text-kill">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {/* Search bar */}
       <div className="flex items-center gap-3">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => handleSearch(e.target.value)}
-          placeholder="Search all characters by name, address, or item ID..."
-          className="flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm placeholder:text-zinc-600 focus:border-blue-500/50 focus:outline-none"
-        />
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => handleSearch(e.target.value)}
+            placeholder="Search all characters by name, address, or item ID..."
+            className="w-full rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-white placeholder:font-sans placeholder:text-foreground/20 focus:border-accent/40 focus:outline-none"
+          />
+        </div>
         {!loading && (
-          <span className="text-xs text-zinc-500 whitespace-nowrap">
-            {total.toLocaleString()} result{total !== 1 ? "s" : ""}
+          <span className="whitespace-nowrap text-xs tabular-nums text-foreground/30">
+            {total.toLocaleString()} found
           </span>
         )}
       </div>
 
+      {/* List */}
       {loading && characters.length === 0 ? (
-        <div className="rounded-lg border border-white/10 bg-white/5 p-8 text-center text-sm text-zinc-500">
-          Loading characters...
+        <div className="card-static p-8 text-center text-sm text-foreground/30">
+          Building character index...
         </div>
       ) : characters.length === 0 ? (
-        <div className="rounded-lg border border-white/10 bg-white/5 p-8 text-center text-sm text-zinc-500">
+        <div className="card-static p-8 text-center text-sm text-foreground/30">
           {search ? `No characters matching "${search}"` : "No characters found"}
         </div>
       ) : (
-        <div className="space-y-1">
+        <div className="card-static divide-y divide-border overflow-hidden">
           {characters.map((char) => (
             <div key={char.objectId}>
               <button
                 onClick={() => toggleDetail(char.objectId)}
-                className="flex w-full items-center justify-between rounded border border-white/5 bg-white/[0.02] px-4 py-3 text-left transition-colors hover:bg-white/[0.05]"
+                className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-surface-hover"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/20 text-xs font-bold text-blue-400">
+                  <div className="flex h-8 w-8 items-center justify-center rounded bg-accent-dim text-xs font-bold text-accent">
                     {char.name.charAt(0).toUpperCase()}
                   </div>
                   <div>
-                    <p className="text-sm font-medium">{char.name}</p>
-                    <p className="font-mono text-xs text-zinc-500">
+                    <p className="text-sm font-semibold text-white">{char.name}</p>
+                    <p className="font-mono text-[0.65rem] text-foreground/25">
                       {truncateAddress(char.objectId)}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <p className="text-xs text-zinc-400">Tribe {char.tribeId}</p>
-                    <p className="font-mono text-xs text-zinc-600">#{char.itemId}</p>
+                    <p className="text-xs text-foreground/40">Tribe {char.tribeId}</p>
+                    <p className="font-mono text-[0.65rem] text-foreground/20">#{char.itemId}</p>
                   </div>
-                  <span className="text-zinc-600">{expandedId === char.objectId ? "−" : "+"}</span>
+                  <span className="text-foreground/20 transition-transform"
+                    style={{ transform: expandedId === char.objectId ? "rotate(45deg)" : "none" }}>
+                    +
+                  </span>
                 </div>
               </button>
 
+              {/* Expanded detail */}
               {expandedId === char.objectId && (
-                <div className="ml-11 border-l border-white/5 pl-4 py-3 space-y-2 text-sm">
+                <div className="border-t border-border bg-surface px-4 py-4 pl-15">
                   {detailLoading ? (
-                    <p className="text-zinc-500">Loading details...</p>
+                    <p className="text-sm text-foreground/30">Loading details...</p>
                   ) : detail ? (
-                    <>
+                    <div className="space-y-3">
                       {detail.description && (
-                        <p className="text-zinc-300">{detail.description}</p>
+                        <p className="text-sm text-foreground/60">{detail.description}</p>
                       )}
-                      <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-xs">
-                        <div>
-                          <span className="text-zinc-600">Object ID</span>
-                          <p className="font-mono text-zinc-400 break-all">{detail.objectId}</p>
-                        </div>
-                        <div>
-                          <span className="text-zinc-600">Wallet Address</span>
-                          <p className="font-mono text-zinc-400 break-all">{detail.address}</p>
-                        </div>
-                        <div>
-                          <span className="text-zinc-600">Item ID</span>
-                          <p className="font-mono text-zinc-400">{detail.itemId}</p>
-                        </div>
-                        <div>
-                          <span className="text-zinc-600">Tenant</span>
-                          <p className="text-zinc-400">{detail.tenant}</p>
-                        </div>
-                        <div>
-                          <span className="text-zinc-600">Tribe</span>
-                          <p className="text-zinc-400">{detail.tribeId}</p>
-                        </div>
-                        <div>
-                          <span className="text-zinc-600">Version</span>
-                          <p className="font-mono text-zinc-400">{detail.version}</p>
-                        </div>
+                      <div className="grid grid-cols-2 gap-x-8 gap-y-2.5">
+                        {[
+                          ["Object ID", detail.objectId, true],
+                          ["Wallet", detail.address, true],
+                          ["Item ID", detail.itemId, false],
+                          ["Tenant", detail.tenant, false],
+                          ["Tribe", String(detail.tribeId), false],
+                          ["Version", detail.version, false],
+                        ].map(([label, value, mono]) => (
+                          <div key={label as string}>
+                            <p className="text-[0.6rem] font-semibold uppercase tracking-wider text-foreground/20">{label as string}</p>
+                            <p className={`mt-0.5 text-xs break-all ${mono ? "font-mono" : ""} text-foreground/50`}>
+                              {value as string}
+                            </p>
+                          </div>
+                        ))}
                       </div>
                       {detail.ownedObjects.length > 0 && (
                         <div className="pt-1">
-                          <p className="text-xs text-zinc-600 mb-1">Owned Objects</p>
-                          {detail.ownedObjects.map((o) => (
-                            <div key={o.objectId} className="flex items-center gap-2 text-xs py-0.5">
-                              <span className="rounded bg-white/10 px-1.5 py-0.5 text-zinc-300">{o.type}</span>
-                              <span className="font-mono text-zinc-500">{truncateAddress(o.objectId)}</span>
-                            </div>
-                          ))}
+                          <p className="text-[0.6rem] font-semibold uppercase tracking-wider text-foreground/20 mb-1.5">
+                            Owned Objects
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {detail.ownedObjects.map((o) => (
+                              <span
+                                key={o.objectId}
+                                className="rounded bg-white/5 px-2 py-1 font-mono text-[0.65rem] text-foreground/40"
+                              >
+                                {o.type}
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       )}
-                    </>
+                    </div>
                   ) : (
-                    <p className="text-zinc-500">Failed to load details</p>
+                    <p className="text-sm text-foreground/30">Failed to load details</p>
                   )}
                 </div>
               )}
@@ -211,21 +216,22 @@ export default function EveCharacters() {
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-2">
+      {/* Pagination */}
+      <div className="flex items-center justify-between">
         <button
           onClick={() => fetchPage(page - 1, search)}
           disabled={page <= 1 || loading}
-          className="rounded bg-white/10 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-white/20 disabled:opacity-30"
+          className="rounded border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground/50 transition-colors hover:bg-surface-hover hover:text-white disabled:opacity-20"
         >
           Previous
         </button>
-        <span className="text-xs text-zinc-500">
-          Page {page} of {Math.ceil(total / 25)}
+        <span className="text-xs tabular-nums text-foreground/25">
+          Page {page} of {Math.max(1, Math.ceil(total / 25))}
         </span>
         <button
           onClick={() => fetchPage(page + 1, search)}
           disabled={!hasMore || loading}
-          className="rounded bg-white/10 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-white/20 disabled:opacity-30"
+          className="rounded border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground/50 transition-colors hover:bg-surface-hover hover:text-white disabled:opacity-20"
         >
           Next
         </button>

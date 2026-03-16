@@ -11,26 +11,22 @@ interface Structure {
   [key: string]: unknown;
 }
 
-const TYPE_STYLES: Record<string, string> = {
-  Gate: "bg-cyan-500/20 text-cyan-400",
-  "Storage Unit": "bg-amber-500/20 text-amber-400",
-  Turret: "bg-red-500/20 text-red-400",
+const TYPE_STYLES: Record<string, { text: string; bg: string }> = {
+  Gate: { text: "text-cyan", bg: "bg-cyan-dim" },
+  "Storage Unit": { text: "text-amber", bg: "bg-amber-dim" },
+  Turret: { text: "text-kill", bg: "bg-kill-dim" },
 };
 
 export default function EveSmartStructures() {
   const [structures, setStructures] = useState<Structure[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetch_() {
       try {
         const res = await fetch("/api/eve?action=smart-structures");
-        if (!res.ok) throw new Error("Failed to fetch structures");
-        const data = await res.json();
-        setStructures(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
+        if (!res.ok) return;
+        setStructures(await res.json());
       } finally {
         setLoading(false);
       }
@@ -38,52 +34,41 @@ export default function EveSmartStructures() {
     fetch_();
   }, []);
 
-  if (error) {
-    return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4">
-        <p className="text-sm text-red-400">{error}</p>
-      </div>
-    );
-  }
-
   if (loading) {
     return (
-      <div className="rounded-lg border border-white/10 bg-white/5 p-8 text-center text-sm text-zinc-500">
-        Loading smart structures...
+      <div className="card-static p-8 text-center text-sm text-foreground/30">
+        Loading structures...
       </div>
     );
   }
 
   if (structures.length === 0) {
     return (
-      <div className="rounded-lg border border-white/10 bg-white/5 p-8 text-center text-sm text-zinc-500">
+      <div className="card-static p-8 text-center text-sm text-foreground/30">
         No smart structures deployed yet
       </div>
     );
   }
 
   return (
-    <div className="space-y-1">
+    <div className="card-static divide-y divide-border">
       {structures.map((s, i) => {
         const key = s.assembly_key ?? s.gate_key;
         const itemId = key?.fields?.item_id ?? "—";
+        const style = TYPE_STYLES[s.type] ?? { text: "text-foreground/50", bg: "bg-white/5" };
 
         return (
           <div
             key={`${s.type}-${i}`}
-            className="flex items-center justify-between rounded border border-white/5 bg-white/[0.02] px-4 py-3 text-sm"
+            className="flex items-center justify-between px-4 py-2.5"
           >
             <div className="flex items-center gap-3">
-              <span
-                className={`rounded px-2 py-0.5 text-xs font-medium ${TYPE_STYLES[s.type] ?? "bg-zinc-500/20 text-zinc-400"}`}
-              >
+              <span className={`rounded px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${style.bg} ${style.text}`}>
                 {s.type}
               </span>
-              <span className="font-mono text-zinc-400">#{itemId}</span>
+              <span className="font-mono text-xs text-foreground/30">#{itemId}</span>
             </div>
-            <span className="text-xs text-zinc-500">
-              {timeAgo(s.timestamp)}
-            </span>
+            <span className="text-[0.65rem] text-foreground/20">{timeAgo(s.timestamp)}</span>
           </div>
         );
       })}

@@ -10,88 +10,77 @@ interface EveEvent {
   data: Record<string, unknown>;
 }
 
-const EVENT_LABELS: Record<string, { label: string; color: string }> = {
-  CharacterCreated: { label: "New Character", color: "bg-blue-500" },
-  AssemblyCreated: { label: "Assembly Deployed", color: "bg-purple-500" },
-  GateCreated: { label: "Gate Built", color: "bg-cyan-500" },
-  GateLinked: { label: "Gate Linked", color: "bg-cyan-400" },
-  Jump: { label: "Gate Jump", color: "bg-green-500" },
-  StorageUnitCreated: { label: "Storage Unit Built", color: "bg-amber-500" },
-  TurretCreated: { label: "Turret Deployed", color: "bg-red-500" },
-  KillmailCreated: { label: "Kill Recorded", color: "bg-red-600" },
+const EVENT_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  CharacterCreated: { label: "New Character", color: "bg-accent", bg: "bg-accent-dim" },
+  AssemblyCreated: { label: "Assembly", color: "bg-purple-500", bg: "bg-purple-500/10" },
+  GateCreated: { label: "Gate Built", color: "bg-cyan", bg: "bg-cyan-dim" },
+  GateLinked: { label: "Gate Linked", color: "bg-cyan", bg: "bg-cyan-dim" },
+  Jump: { label: "Gate Jump", color: "bg-online", bg: "bg-online-dim" },
+  StorageUnitCreated: { label: "Storage", color: "bg-amber", bg: "bg-amber-dim" },
+  TurretCreated: { label: "Turret", color: "bg-kill", bg: "bg-kill-dim" },
+  KillmailCreated: { label: "Kill", color: "bg-kill", bg: "bg-kill-dim" },
 };
 
 export default function EveActivity() {
   const [events, setEvents] = useState<EveEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchActivity() {
       try {
         const res = await fetch("/api/eve?action=activity");
-        if (!res.ok) throw new Error("Failed to fetch activity");
-        const data = await res.json();
-        setEvents(data);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
+        if (!res.ok) return;
+        setEvents(await res.json());
       } finally {
         setLoading(false);
       }
     }
-
     fetchActivity();
     const interval = setInterval(fetchActivity, 20_000);
     return () => clearInterval(interval);
   }, []);
 
-  if (error) {
-    return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4">
-        <p className="text-sm text-red-400">{error}</p>
-      </div>
-    );
-  }
-
   if (loading) {
     return (
-      <div className="rounded-lg border border-white/10 bg-white/5 p-8 text-center text-sm text-zinc-500">
-        Loading EVE Frontier activity...
+      <div className="card-static p-8 text-center text-sm text-foreground/30">
+        Loading activity...
       </div>
     );
   }
 
   if (events.length === 0) {
     return (
-      <div className="rounded-lg border border-white/10 bg-white/5 p-8 text-center text-sm text-zinc-500">
-        No recent activity on-chain
+      <div className="card-static p-8 text-center text-sm text-foreground/30">
+        No recent activity
       </div>
     );
   }
 
   return (
-    <div className="space-y-1">
+    <div className="card-static max-h-[480px] divide-y divide-border overflow-y-auto">
       {events.map((event, i) => {
-        const info = EVENT_LABELS[event.eventType] ?? {
+        const cfg = EVENT_CONFIG[event.eventType] ?? {
           label: event.eventType,
-          color: "bg-zinc-500",
+          color: "bg-foreground/50",
+          bg: "bg-foreground/5",
         };
 
         return (
           <div
             key={`${event.txDigest}-${i}`}
-            className="flex items-center justify-between rounded border border-white/5 bg-white/[0.02] px-4 py-3 text-sm"
+            className="flex items-center justify-between px-4 py-2.5"
           >
             <div className="flex items-center gap-3">
-              <span className={`h-2 w-2 rounded-full ${info.color}`} />
-              <span className="font-medium">{info.label}</span>
-            </div>
-            <div className="flex items-center gap-4 text-zinc-500">
-              <span className="font-mono text-xs">
-                {truncateAddress(event.txDigest, 8, 6)}
+              <span className={`h-1.5 w-1.5 rounded-full ${cfg.color}`} />
+              <span className={`rounded px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${cfg.bg} text-foreground/60`}>
+                {cfg.label}
               </span>
-              <span className="text-xs">{timeAgo(event.timestamp)}</span>
+            </div>
+            <div className="flex items-center gap-3 text-foreground/30">
+              <span className="font-mono text-[0.65rem]">
+                {truncateAddress(event.txDigest, 6, 4)}
+              </span>
+              <span className="text-[0.65rem]">{timeAgo(event.timestamp)}</span>
             </div>
           </div>
         );

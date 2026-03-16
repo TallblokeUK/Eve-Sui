@@ -3,6 +3,8 @@ import client from "@/lib/sui-client";
 import { EVE_WORLD_PACKAGE, EVE_EVENTS } from "@/lib/eve-constants";
 import { getCharacterIndex, resolveCharacterName } from "@/lib/eve-cache";
 
+export const maxDuration = 60;
+
 function jsonResponse(data: unknown, status = 200) {
   const body = JSON.stringify(data, (_key, value) =>
     typeof value === "bigint" ? value.toString() : value

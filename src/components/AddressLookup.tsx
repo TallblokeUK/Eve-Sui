@@ -52,62 +52,53 @@ export default function AddressLookup() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <form onSubmit={handleLookup} className="flex gap-2">
         <input
           type="text"
           value={address}
           onChange={(e) => setAddress(e.target.value)}
-          placeholder="Enter a Sui address (0x...)"
-          className="flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm placeholder:text-zinc-600 focus:border-blue-500/50 focus:outline-none"
+          placeholder="0x..."
+          className="flex-1 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-white placeholder:font-sans placeholder:text-foreground/20 focus:border-accent/40 focus:outline-none"
         />
         <button
           type="submit"
           disabled={loading || !address.trim()}
-          className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium transition-colors hover:bg-blue-500 disabled:opacity-40"
+          className="rounded-lg border border-accent/30 bg-accent-dim px-4 py-2.5 text-sm font-semibold text-accent transition-colors hover:bg-accent/20 disabled:opacity-30"
         >
-          {loading ? "Loading..." : "Lookup"}
+          {loading ? "..." : "Lookup"}
         </button>
       </form>
 
       {error && (
-        <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4">
-          <p className="text-sm text-red-400">{error}</p>
+        <div className="card-static border-kill/20 bg-kill-dim p-3">
+          <p className="text-sm text-kill">{error}</p>
         </div>
       )}
 
       {balance !== null && (
-        <div className="rounded-lg border border-white/10 bg-white/5 p-5">
-          <p className="text-xs uppercase tracking-wider text-zinc-500">
-            SUI Balance
-          </p>
-          <p className="mt-2 text-3xl font-semibold">
-            {mistToSui(balance)} <span className="text-lg text-zinc-500">SUI</span>
+        <div className="card-static p-4">
+          <p className="text-[0.6rem] font-semibold uppercase tracking-wider text-foreground/20">Balance</p>
+          <p className="mt-1 text-2xl font-bold text-white">
+            {mistToSui(balance)} <span className="text-sm font-normal text-foreground/30">SUI</span>
           </p>
         </div>
       )}
 
       {objects.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-zinc-400">
+        <div>
+          <p className="mb-2 text-[0.6rem] font-semibold uppercase tracking-wider text-foreground/20">
             Owned Objects ({objects.length})
-          </h3>
-          <div className="max-h-80 space-y-1 overflow-y-auto">
+          </p>
+          <div className="card-static max-h-60 divide-y divide-border overflow-y-auto">
             {objects.map((obj) => {
               const d = obj.data;
               if (!d) return null;
               const typeName = d.type?.split("::")?.pop() ?? "Unknown";
               return (
-                <div
-                  key={d.objectId}
-                  className="flex items-center justify-between rounded border border-white/5 bg-white/[0.02] px-4 py-2.5 text-sm"
-                >
-                  <span className="font-mono text-zinc-400">
-                    {truncateAddress(d.objectId)}
-                  </span>
-                  <span className="rounded bg-white/10 px-2 py-0.5 text-xs text-zinc-300">
-                    {typeName}
-                  </span>
+                <div key={d.objectId} className="flex items-center justify-between px-4 py-2 text-sm">
+                  <span className="font-mono text-xs text-foreground/40">{truncateAddress(d.objectId)}</span>
+                  <span className="rounded bg-white/5 px-2 py-0.5 text-[0.65rem] text-foreground/50">{typeName}</span>
                 </div>
               );
             })}
