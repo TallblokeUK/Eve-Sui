@@ -6,13 +6,21 @@ import { truncateAddress, timeAgo } from "@/lib/utils";
 interface Killmail {
   key: { item_id: string; tenant: string };
   killer_id: { item_id: string; tenant: string };
-  victim_id?: { item_id: string; tenant: string };
+  victim_id: { item_id: string; tenant: string };
   reported_by_character_id: { item_id: string; tenant: string };
   loss_type: { variant: string };
   solar_system_id: { item_id: string };
   kill_timestamp: string;
   timestamp: string;
   txDigest: string;
+  killerName: string | null;
+  victimName: string | null;
+}
+
+interface KillmailDetail extends Killmail {
+  reporterName: string | null;
+  sender: string;
+  gasUsed: { computationCost: string; storageCost: string; storageRebate: string };
 }
 
 export default function EveKillmails() {
@@ -21,6 +29,9 @@ export default function EveKillmails() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedDigest, setExpandedDigest] = useState<string | null>(null);
+  const [detail, setDetail] = useState<KillmailDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const fetchPage = useCallback(async (p: number) => {
     setLoading(true);
@@ -31,6 +42,7 @@ export default function EveKillmails() {
       setKills(data.data);
       setHasMore(data.hasMore);
       setPage(p);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -41,6 +53,26 @@ export default function EveKillmails() {
   useEffect(() => {
     fetchPage(1);
   }, [fetchPage]);
+
+  async function toggleDetail(txDigest: string) {
+    if (expandedDigest === txDigest) {
+      setExpandedDigest(null);
+      setDetail(null);
+      return;
+    }
+    setExpandedDigest(txDigest);
+    setDetail(null);
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`/api/eve?action=killmail-detail&digest=${txDigest}`);
+      if (!res.ok) throw new Error("Failed to load details");
+      setDetail(await res.json());
+    } catch {
+      setDetail(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
 
   if (error) {
     return (
@@ -69,32 +101,108 @@ export default function EveKillmails() {
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        {kills.map((kill, i) => (
-          <div
-            key={`${kill.txDigest}-${i}`}
-            className="flex items-center justify-between rounded border border-white/5 bg-white/[0.02] px-4 py-3 text-sm"
-          >
-            <div className="flex items-center gap-3">
-              <span className="h-2 w-2 rounded-full bg-red-500" />
-              <div>
-                <p className="font-medium">
-                  <span className="text-red-400">#{kill.killer_id?.item_id}</span>
-                  {" destroyed "}
-                  <span className="text-zinc-300">
-                    {kill.loss_type?.variant?.toLowerCase() ?? "target"}
+        {kills.map((kill, i) => {
+          const isExpanded = expandedDigest === kill.txDigest;
+
+          return (
+            <div key={`${kill.txDigest}-${i}`}>
+              <button
+                onClick={() => toggleDetail(kill.txDigest)}
+                className="flex w-full items-center justify-between rounded border border-white/5 bg-white/[0.02] px-4 py-3 text-sm text-left transition-colors hover:bg-white/[0.05]"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="h-2 w-2 rounded-full bg-red-500" />
+                  <div>
+                    <p className="font-medium">
+                      <span className="text-red-400">
+                        {kill.killerName || `#${kill.killer_id?.item_id}`}
+                      </span>
+                      {" destroyed "}
+                      <span className="text-zinc-300">
+                        {kill.victimName || `#${kill.victim_id?.item_id}`}
+                      </span>
+                    </p>
+                    <p className="text-xs text-zinc-600">
+                      {kill.loss_type?.variant} &middot; System #{kill.solar_system_id?.item_id}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-zinc-500">
+                    {timeAgo(kill.timestamp)}
                   </span>
-                </p>
-                <p className="font-mono text-xs text-zinc-600">
-                  System #{kill.solar_system_id?.item_id} &middot;{" "}
-                  {truncateAddress(kill.txDigest, 8, 6)}
-                </p>
-              </div>
+                  <span className="text-zinc-600">{isExpanded ? "−" : "+"}</span>
+                </div>
+              </button>
+
+              {isExpanded && (
+                <div className="ml-5 border-l border-white/5 pl-4 py-3 space-y-2 text-sm">
+                  {detailLoading ? (
+                    <p className="text-zinc-500">Loading details...</p>
+                  ) : detail ? (
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-xs">
+                      <div>
+                        <span className="text-zinc-600">Killer</span>
+                        <p className="text-zinc-300">
+                          {detail.killerName ?? "Unknown"}{" "}
+                          <span className="text-zinc-500">#{detail.killer_id?.item_id}</span>
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-zinc-600">Victim</span>
+                        <p className="text-zinc-300">
+                          {detail.victimName ?? "Unknown"}{" "}
+                          <span className="text-zinc-500">#{detail.victim_id?.item_id}</span>
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-zinc-600">Loss Type</span>
+                        <p className="text-zinc-300">{detail.loss_type?.variant}</p>
+                      </div>
+                      <div>
+                        <span className="text-zinc-600">Solar System</span>
+                        <p className="font-mono text-zinc-400">#{detail.solar_system_id?.item_id}</p>
+                      </div>
+                      <div>
+                        <span className="text-zinc-600">Reported By</span>
+                        <p className="text-zinc-300">
+                          {detail.reporterName ?? "Unknown"}{" "}
+                          <span className="text-zinc-500">#{detail.reported_by_character_id?.item_id}</span>
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-zinc-600">Kill Time</span>
+                        <p className="text-zinc-400">
+                          {new Date(Number(detail.kill_timestamp) * 1000).toLocaleString()}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-zinc-600">Transaction</span>
+                        <p className="font-mono text-zinc-400 break-all">{detail.txDigest}</p>
+                      </div>
+                      <div>
+                        <span className="text-zinc-600">Sender</span>
+                        <p className="font-mono text-zinc-400">{detail.sender ? truncateAddress(detail.sender) : "—"}</p>
+                      </div>
+                      {detail.gasUsed && (
+                        <div className="col-span-2">
+                          <span className="text-zinc-600">Gas Used</span>
+                          <p className="text-zinc-400">
+                            Computation: {detail.gasUsed.computationCost} &middot;
+                            Storage: {detail.gasUsed.storageCost} &middot;
+                            Rebate: {detail.gasUsed.storageRebate}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-zinc-500">Failed to load details</p>
+                  )}
+                </div>
+              )}
             </div>
-            <span className="text-xs text-zinc-500">
-              {timeAgo(kill.timestamp)}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="flex items-center justify-between pt-2">

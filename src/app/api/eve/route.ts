@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import client from "@/lib/sui-client";
 import { EVE_WORLD_PACKAGE, EVE_EVENTS } from "@/lib/eve-constants";
+import { getCharacterIndex, resolveCharacterName } from "@/lib/eve-cache";
 
 function jsonResponse(data: unknown, status = 200) {
   const body = JSON.stringify(data, (_key, value) =>
@@ -12,46 +13,6 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
-/** Paginate through events and collect object IDs */
-async function collectEventIds(
-  eventType: string,
-  idField: string,
-  limit: number
-): Promise<string[]> {
-  const ids: string[] = [];
-  let cursor: { txDigest: string; eventSeq: string } | null = null;
-  while (ids.length < limit) {
-    const batch = Math.min(50, limit - ids.length);
-    const result = await client.queryEvents({
-      query: { MoveEventType: eventType },
-      limit: batch,
-      order: "descending",
-      ...(cursor ? { cursor } : {}),
-    });
-    for (const e of result.data) {
-      const id = (e.parsedJson as Record<string, string>)?.[idField];
-      if (id) ids.push(id);
-    }
-    if (!result.hasNextPage) break;
-    cursor = result.nextCursor as { txDigest: string; eventSeq: string };
-  }
-  return ids;
-}
-
-/** Fetch objects in batches of 50 (multiGetObjects limit) */
-async function fetchObjects(ids: string[]) {
-  const results = [];
-  for (let i = 0; i < ids.length; i += 50) {
-    const batch = ids.slice(i, i + 50);
-    const objects = await client.multiGetObjects({
-      ids: batch,
-      options: { showContent: true, showType: true },
-    });
-    results.push(...objects);
-  }
-  return results;
-}
-
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const action = searchParams.get("action");
@@ -61,7 +22,6 @@ export async function GET(request: NextRequest) {
   try {
     switch (action) {
       case "stats": {
-        // Count totals by paginating all events (cached for 60s by Vercel)
         const counts = await Promise.all(
           [
             ["Characters", EVE_EVENTS.CharacterCreated],
@@ -91,43 +51,80 @@ export async function GET(request: NextRequest) {
       }
 
       case "characters": {
-        const skip = (page - 1) * pageSize;
-        const ids = await collectEventIds(
-          EVE_EVENTS.CharacterCreated,
-          "character_id",
-          skip + pageSize
-        );
+        const q = searchParams.get("q")?.toLowerCase().trim();
+        const index = await getCharacterIndex();
 
-        const pageIds = ids.slice(skip, skip + pageSize);
-        if (pageIds.length === 0) return jsonResponse({ data: [], page, hasMore: false });
+        const filtered = q
+          ? index.filter(
+              (c) =>
+                c.name.toLowerCase().includes(q) ||
+                c.objectId.toLowerCase().includes(q) ||
+                c.address.toLowerCase().includes(q) ||
+                c.itemId.includes(q)
+            )
+          : index;
 
-        const objects = await fetchObjects(pageIds);
-        const characters = objects
-          .filter((o) => o.data?.content?.dataType === "moveObject")
-          .map((o) => {
-            const fields = (o.data!.content as Record<string, unknown>).fields as Record<string, unknown>;
-            const key = fields.key as Record<string, Record<string, string>>;
-            const meta = fields.metadata as Record<string, Record<string, string>>;
-            return {
-              objectId: o.data!.objectId,
-              name: meta?.fields?.name || "Unknown",
-              itemId: key?.fields?.item_id,
-              tenant: key?.fields?.tenant,
-              tribeId: fields.tribe_id,
-              address: fields.character_address,
-            };
-          });
+        const start = (page - 1) * pageSize;
+        const pageData = filtered.slice(start, start + pageSize);
 
-        return jsonResponse({ data: characters, page, hasMore: ids.length > skip + pageSize });
+        return jsonResponse({
+          data: pageData,
+          page,
+          total: filtered.length,
+          hasMore: start + pageSize < filtered.length,
+        });
+      }
+
+      case "character-detail": {
+        const id = searchParams.get("id");
+        if (!id) return jsonResponse({ error: "id parameter required" }, 400);
+
+        const obj = await client.getObject({
+          id,
+          options: { showContent: true, showType: true, showOwner: true },
+        });
+        if (!obj.data) return jsonResponse({ error: "Character not found" }, 404);
+
+        const fields = (obj.data.content as Record<string, unknown>).fields as Record<string, unknown>;
+        const key = fields.key as Record<string, Record<string, string>>;
+        const meta = fields.metadata as Record<string, Record<string, string>>;
+
+        // Get owned objects for this character's address
+        const charAddr = fields.character_address as string;
+        const owned = charAddr
+          ? await client.getOwnedObjects({
+              owner: charAddr,
+              limit: 20,
+              options: { showType: true, showContent: true },
+            })
+          : null;
+
+        return jsonResponse({
+          objectId: obj.data.objectId,
+          version: obj.data.version,
+          name: meta?.fields?.name || "Unknown",
+          description: meta?.fields?.description || "",
+          url: meta?.fields?.url || "",
+          itemId: key?.fields?.item_id,
+          tenant: key?.fields?.tenant,
+          tribeId: fields.tribe_id,
+          address: charAddr,
+          ownerCapId: fields.owner_cap_id,
+          ownedObjects: owned?.data?.map((o) => ({
+            objectId: o.data?.objectId,
+            type: o.data?.type?.split("::")?.pop(),
+            fullType: o.data?.type,
+          })) ?? [],
+        });
       }
 
       case "killmails": {
-        const skip = (page - 1) * pageSize;
-        // Killmail events contain everything we need directly
         const allEvents: Record<string, unknown>[] = [];
         let cursor = null;
         let hasNext = true;
+        const skip = (page - 1) * pageSize;
         let skipped = 0;
+
         while (allEvents.length < pageSize && hasNext) {
           const r = await client.queryEvents({
             query: { MoveEventType: EVE_EVENTS.KillmailCreated },
@@ -138,8 +135,18 @@ export async function GET(request: NextRequest) {
           for (const e of r.data) {
             if (skipped < skip) { skipped++; continue; }
             if (allEvents.length >= pageSize) break;
+            const parsed = e.parsedJson as Record<string, Record<string, string>>;
+
+            // Resolve killer and victim names
+            const [killerName, victimName] = await Promise.all([
+              resolveCharacterName(parsed.killer_id?.item_id),
+              resolveCharacterName(parsed.victim_id?.item_id),
+            ]);
+
             allEvents.push({
-              ...(e.parsedJson as Record<string, unknown>),
+              ...parsed,
+              killerName,
+              victimName,
               timestamp: e.timestampMs,
               txDigest: e.id.txDigest,
             });
@@ -149,6 +156,41 @@ export async function GET(request: NextRequest) {
         }
 
         return jsonResponse({ data: allEvents, page, hasMore: hasNext || allEvents.length === pageSize });
+      }
+
+      case "killmail-detail": {
+        const digest = searchParams.get("digest");
+        if (!digest) return jsonResponse({ error: "digest parameter required" }, 400);
+
+        // Fetch the transaction to get full details
+        const tx = await client.getTransactionBlock({
+          digest,
+          options: { showInput: true, showEffects: true, showEvents: true },
+        });
+
+        const killEvent = tx.events?.find((e) =>
+          e.type.includes("KillmailCreatedEvent")
+        );
+
+        if (!killEvent) return jsonResponse({ error: "Killmail event not found in transaction" }, 404);
+
+        const parsed = killEvent.parsedJson as Record<string, Record<string, string>>;
+        const [killerName, victimName, reporterName] = await Promise.all([
+          resolveCharacterName(parsed.killer_id?.item_id),
+          resolveCharacterName(parsed.victim_id?.item_id),
+          resolveCharacterName(parsed.reported_by_character_id?.item_id),
+        ]);
+
+        return jsonResponse({
+          ...parsed,
+          killerName,
+          victimName,
+          reporterName,
+          txDigest: digest,
+          timestamp: killEvent.timestampMs,
+          sender: tx.transaction?.data?.sender,
+          gasUsed: tx.effects?.gasUsed,
+        });
       }
 
       case "smart-structures": {
@@ -225,7 +267,7 @@ export async function GET(request: NextRequest) {
 
       default:
         return jsonResponse(
-          { error: "Unknown action. Use: stats, characters, killmails, smart-structures, activity, modules" },
+          { error: "Unknown action. Use: stats, characters, character-detail, killmails, killmail-detail, smart-structures, activity, modules" },
           400
         );
     }
