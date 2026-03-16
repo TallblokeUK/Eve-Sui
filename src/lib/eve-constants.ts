@@ -1,5 +1,6 @@
+// "stillness" is the active game world — the other testnet packages are dev/staging
 export const EVE_WORLD_PACKAGE =
-  "0x920e577e1bf078bad19385aaa82e7332ef92b4973dcf8534797b129f9814d631";
+  "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
 
 export const EVE_TYPES = {
   Assembly: `${EVE_WORLD_PACKAGE}::assembly::Assembly`,
